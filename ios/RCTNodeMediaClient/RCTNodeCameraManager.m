@@ -1,95 +1,129 @@
 //
-//  RTCNodeCameraManager.m
+//  RCTNodeCameraView.m
+//  
 //
-//
-//  Created by Mingliang Chen on 2017/11/29.
+//  Created by Mingliang Chen on 2017/12/12.
 //  Copyright © 2017年 NodeMedia. All rights reserved.
 //
-#import <React/RCTViewManager.h>
-#import <React/RCTBridge.h>
-#import <React/RCTUIManager.h>
-#import "RCTNodeCameraView.h"
 
-@interface RCTNodeCameraManager : RCTViewManager
+#import "RCTNodeMediaClient.h"
+#import "RCTNodeCameraView.h"
+#import <NodeMediaClient/NodeMediaClient.h>
+
+@interface RCTNodeCameraView()
+
+@property (strong,nonatomic) NodePublisher *np;
 
 @end
 
-@implementation RCTNodeCameraManager
-RCT_EXPORT_MODULE()
+@implementation RCTNodeCameraView
 
-- (UIView *)view {
-  return [[RCTNodeCameraView alloc] init];
+- (id)init {
+  self = [super init];
+  if(self) {
+    _np = [[NodePublisher alloc] initWithPremium:[RCTNodeMediaClient premium]];
+    [_np setNodePublisherDelegate:self];
+    _autopreview = NO;
+    _outputUrl = nil;
+    _camera = nil;
+    _audio = nil;
+    _video = nil;
+    _onStatus = nil;
+  }
+  return self;
 }
 
-RCT_EXPORT_VIEW_PROPERTY(outputUrl, NSString)
-RCT_EXPORT_VIEW_PROPERTY(autopreview, BOOL)
-RCT_EXPORT_VIEW_PROPERTY(camera, NSDictionary);
-RCT_EXPORT_VIEW_PROPERTY(audio, NSDictionary);
-RCT_EXPORT_VIEW_PROPERTY(video, NSDictionary);
-RCT_EXPORT_VIEW_PROPERTY(denoise, BOOL);
-RCT_EXPORT_VIEW_PROPERTY(smoothSkinLevel, int);
-RCT_EXPORT_VIEW_PROPERTY(onStatus, RCTDirectEventBlock)
-
-
-RCT_EXPORT_METHOD(startprev:(nonnull NSNumber *)reactTag)
-{
-  
-  [self.bridge.uiManager addUIBlock:
-   ^(__unused RCTUIManager *uiManager, NSDictionary<NSNumber *, RCTNodeCameraView *> *viewRegistry){
-     RCTNodeCameraView *view = viewRegistry[reactTag];
-     [view startprev];
-   }];
+-(void) onEventCallback:(nonnull id)sender event:(int)event msg:(nonnull NSString*)msg {
+    if (!_onStatus) {
+        return;
+    }
+    
+    NSLog(@"Calling _onStatus with event %i and msg %@", event, msg);
+    _onStatus(@{ @"msg": msg, @"event": [NSNumber numberWithInteger:event] });
 }
 
-
-RCT_EXPORT_METHOD(stopprev:(nonnull NSNumber *)reactTag)
-{
-  
-  [self.bridge.uiManager addUIBlock:
-   ^(__unused RCTUIManager *uiManager, NSDictionary<NSNumber *, RCTNodeCameraView *> *viewRegistry){
-     RCTNodeCameraView *view = viewRegistry[reactTag];
-     [view stopprev];
-   }];
+-(void)setOutputUrl:(NSString *)outputUrl {
+  [_np setOutputUrl:outputUrl];
 }
 
-RCT_EXPORT_METHOD(start:(nonnull NSNumber *)reactTag)
-{
-  
-  [self.bridge.uiManager addUIBlock:
-   ^(__unused RCTUIManager *uiManager, NSDictionary<NSNumber *, RCTNodeCameraView *> *viewRegistry){
-     RCTNodeCameraView *view = viewRegistry[reactTag];
-     [view start];
-   }];
+-(void)setAutopreview:(BOOL)autopreview {
+  _autopreview = autopreview;
+  if(_camera && _video && autopreview) {
+    [_np startPreview];
+  }
+}
+- (void)setCamera:(NSDictionary *)camera {
+  _camera = camera;
+  int cameraId = [[camera objectForKey:@"cameraId"] intValue];
+  BOOL cameraFrontMirror = [[camera objectForKey:@"cameraFrontMirror"] boolValue];
+  [_np setCameraPreview:self cameraId:cameraId frontMirror:cameraFrontMirror];
+  if(_autopreview && _video) {
+    [_np startPreview];
+  }
 }
 
-RCT_EXPORT_METHOD(stop:(nonnull NSNumber *)reactTag)
-{
-  
-  [self.bridge.uiManager addUIBlock:
-   ^(__unused RCTUIManager *uiManager, NSDictionary<NSNumber *, RCTNodeCameraView *> *viewRegistry){
-     RCTNodeCameraView *view = viewRegistry[reactTag];
-     [view stop];
-   }];
+- (void)setAudio:(NSDictionary *)audio {
+  _audio = audio;
+  int audioBitrate = [[audio objectForKey:@"bitrate"] intValue];
+  int audioProfile = [[audio objectForKey:@"profile"] intValue];
+  int audioSamplerate = [[audio objectForKey:@"samplerate"] intValue];
+  [_np setAudioParamBitrate:audioBitrate profile:audioProfile sampleRate:audioSamplerate];
 }
 
-RCT_EXPORT_METHOD(switchCamera:(nonnull NSNumber *)reactTag)
-{
-  
-  [self.bridge.uiManager addUIBlock:
-   ^(__unused RCTUIManager *uiManager, NSDictionary<NSNumber *, RCTNodeCameraView *> *viewRegistry){
-     RCTNodeCameraView *view = viewRegistry[reactTag];
-     [view switchCamera];
-   }];
+- (void)setVideo:(NSDictionary *)video {
+  _video = video;
+  int videoPreset = [[video objectForKey:@"preset"] intValue];
+  int videoFPS = [[video objectForKey:@"fps"] intValue];
+  int videoBitrate = [[video objectForKey:@"bitrate"] intValue];
+  int videoProfile = [[video objectForKey:@"profile"] intValue];
+  BOOL videoFrontMirror = [[video objectForKey:@"videoFrontMirror"] boolValue];
+  [_np setVideoParamPreset:videoPreset fps:videoFPS bitrate:videoBitrate profile:videoProfile frontMirror:videoFrontMirror];
+  if(_autopreview && _camera) {
+    [_np startPreview];
+  }
 }
 
-RCT_EXPORT_METHOD(flashEnable:(nonnull NSNumber *)reactTag enable:(BOOL)enable)
-{
-  
-  [self.bridge.uiManager addUIBlock:
-   ^(__unused RCTUIManager *uiManager, NSDictionary<NSNumber *, RCTNodeCameraView *> *viewRegistry){
-     RCTNodeCameraView *view = viewRegistry[reactTag];
-     [view setFlashEnable:enable];
-   }];
+- (void)setDenoise:(BOOL)denoise {
+  _denoise = denoise;
+  [_np setDenoiseEnable:denoise];
+}
+
+- (void)setSmoothSkinLevel:(NSInteger)smoothSkinLevel {
+  _smoothSkinLevel = smoothSkinLevel;
+  [_np setBeautyLevel:smoothSkinLevel];
+}
+
+- (void)setOnStatus:(RCTDirectEventBlock)onStatus {
+    _onStatus = onStatus;
+}
+
+- (void)setFlashEnable:(BOOL)flashEnable {
+  [_np setFlashEnable:flashEnable];
+}
+
+- (void)setMicEnable:(BOOL)micEnable {
+    NSLog(@"setMicEnable Called %hhd",micEnable);
+    [_np setAudioEnable:micEnable];
+}
+
+-(int)startprev {
+  return [_np startPreview];
+}
+
+-(int)stopprev {
+  return [_np stopPreview];
+}
+
+-(int)start {
+  return [_np start];
+}
+
+-(int)stop {
+  return [_np stop];
+}
+
+-(int)switchCamera {
+  return [_np switchCamera];
 }
 
 @end
